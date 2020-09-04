@@ -5,9 +5,22 @@ import edu.agh.tkk.pythonantlr.Python3Parser;
 import edu.agh.tkk.pythonantlr.Python3Visitor;
 import org.antlr.v4.runtime.tree.*;
 
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 
 public class TestVisitor extends AbstractParseTreeVisitor<String> implements Python3Visitor<String> {
+
+    private Set<String> variables;
+    private int tmpVarCounter;
+    private String currentTmpVar;
+
+    public TestVisitor() {
+        variables = new HashSet<>();
+        tmpVarCounter = 0;
+        currentTmpVar = "";
+    }
+
     @Override
     public String visitSingle_input(Python3Parser.Single_inputContext ctx) {
         return this.visitChildren(ctx);
@@ -86,6 +99,44 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     @Override
     public String visitSmall_stmt(Python3Parser.Small_stmtContext ctx) {
         return this.visitChildren(ctx);
+    }
+
+    @Override
+    public String visitSimple_assign(Python3Parser.Simple_assignContext ctx) {
+        String right = ctx.right_atom.getText();
+        String var = ctx.left.getText();
+
+        if (!variables.contains(var)) {
+            variables.add(var);
+            System.out.printf("%%%s = alloca i32, align 4\n", var);
+        }
+
+        if (ctx.right_atom.NUMBER() == null) {
+            System.out.printf("%%%d = load i32, i32* %%%s, align 4\n", tmpVarCounter, right);
+            System.out.printf("store i32 %%%d, i32* %%%s, align 4\n", tmpVarCounter, var);
+            tmpVarCounter += 1;
+        } else {
+            System.out.printf("store i32 %s, i32* %%%s, align 4\n", right, var);
+        }
+
+        return null;
+    }
+
+    @Override
+    public String visitComplex_assign(Python3Parser.Complex_assignContext ctx) {
+        String var = ctx.left.getText();
+
+        if (!variables.contains(var)) {
+            variables.add(var);
+            System.out.printf("%%%s = alloca i32, align 4\n", var);
+        }
+
+        System.out.print(visit(ctx.right_expr));
+        if (!currentTmpVar.isEmpty()) {
+            System.out.printf("store i32 %%%s, i32* %%%s, align 4\n", currentTmpVar, var);
+            currentTmpVar = "";
+        }
+        return null;
     }
 
     @Override
@@ -327,21 +378,56 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     }
 
     @Override
-    public String visitSingle_term(Python3Parser.Single_termContext ctx) {
+    public String visitArith_expr_single_term(Python3Parser.Arith_expr_single_termContext ctx) {
         return this.visitChildren(ctx);
     }
 
     @Override
-    public String visitMulti_term(Python3Parser.Multi_termContext ctx) {
+    public String visitArith_expr_multi_term(Python3Parser.Arith_expr_multi_termContext ctx) {
+        String operation;
         if (ctx.op.getType() == Python3Parser.ADD) {
-            return "add i32 " + visit(ctx.left) + ", " + visit(ctx.right);
+            operation = "add";
         } else {
-            return "sub i32 " + visit(ctx.left) + ", " + visit(ctx.right);
+            operation = "sub";
         }
+
+        String result = "";
+        if (ctx.left instanceof Python3Parser.Arith_expr_single_termContext) {
+            String left = visit(ctx.left);
+            String right = visit(ctx.right);
+            if (left.contains("%") && right.contains("%")) {
+                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, left);
+                tmpVarCounter += 1;
+                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, right);
+                result += String.format("%%%s = %s nsw i32 %%%d, %%%d\n", operation, operation, tmpVarCounter-1, tmpVarCounter);
+                tmpVarCounter += 1;
+                currentTmpVar = operation;
+            } else if (left.contains("%")) {
+                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, left);
+                result += String.format("%%%s = %s nsw i32 %%%d, %s\n", operation, operation, tmpVarCounter, right);
+                tmpVarCounter += 1;
+                currentTmpVar = operation;
+            } else if (right.contains("%")) {
+                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, right);
+                result += String.format("%%%s = %s nsw i32 %%%d, %s\n", operation, operation, tmpVarCounter, left);
+                tmpVarCounter += 1;
+                currentTmpVar = operation;
+            } else {
+                result += String.format("%%%s = %s nsw i32 %s, %s\n", operation, operation, left, right);
+                currentTmpVar = operation;
+            }
+        } else {
+            result += visit(ctx.left);
+            result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, visit(ctx.right));
+            result += String.format("%%%s = %s nsw i32 %%%s, %%%d\n", operation, operation, currentTmpVar, tmpVarCounter);
+            tmpVarCounter += 1;
+            currentTmpVar = operation;
+        }
+        return result;
     }
 
     @Override
-    public String visitMulti_factor(Python3Parser.Multi_factorContext ctx) {
+    public String visitTerm_multi_factor(Python3Parser.Term_multi_factorContext ctx) {
         switch (ctx.op.getType()) {
             case Python3Lexer.STAR:  return "mul i32 " + visit(ctx.left) + ", " + visit(ctx.right);
             case Python3Lexer.DIV: return "div i32 " + visit(ctx.left) + ", " + visit(ctx.right);
@@ -350,8 +436,8 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     }
 
     @Override
-    public String visitSingle_factor(Python3Parser.Single_factorContext ctx) {
-        return visitChildren(ctx);
+    public String visitTerm_single_factor(Python3Parser.Term_single_factorContext ctx) {
+        return this.visitChildren(ctx);
     }
 
     @Override

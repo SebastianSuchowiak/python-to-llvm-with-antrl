@@ -157,8 +157,10 @@ vfpdef: NAME;
 
 stmt: simple_stmt | compound_stmt;
 simple_stmt: small_stmt (';' small_stmt)* (';')? NEWLINE;
-small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
+small_stmt: (assign_stmt | expr_stmt | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | nonlocal_stmt | assert_stmt);
+assign_stmt: left=atom '=' right_atom=atom #simple_assign
+           | left=atom '=' right_expr=testlist_star_expr #complex_assign;
 expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*);
 annassign: ':' test ('=' test)?;
@@ -220,10 +222,13 @@ expr: xor_expr ('|' xor_expr)*;
 xor_expr: and_expr ('^' and_expr)*;
 and_expr: shift_expr ('&' shift_expr)*;
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*;
-arith_expr: term #single_term
-          | left=term op=('+'|'-') right=arith_expr #multi_term;
-term: left=factor op=('*'|'@'|'/'|'%'|'//') right=term #multi_factor
-    | factor #single_factor;
+
+arith_expr: term #arith_expr_single_term
+          | left=arith_expr op=('+'|'-') right=term #arith_expr_multi_term;
+
+term: left=factor op=('*'|'@'|'/'|'%'|'//') right=term #term_multi_factor
+    | factor #term_single_factor;
+
 factor: ('+'|'-'|'~') factor | power;
 power: atom_expr ('**' factor)?;
 atom_expr: (AWAIT)? atom trailer*;

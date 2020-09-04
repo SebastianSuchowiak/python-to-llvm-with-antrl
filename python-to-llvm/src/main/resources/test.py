@@ -1,6 +1,4 @@
-a=3
-b=5
-c=a*b-4
-d=b/a
-e=d-c
-k=d+e
+a=1
+b=2+1
+c=2
+c=c+b-a
