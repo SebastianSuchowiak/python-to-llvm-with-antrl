@@ -5,29 +5,198 @@ import edu.agh.tkk.pythonantlr.Python3Parser;
 import edu.agh.tkk.pythonantlr.Python3Visitor;
 import org.antlr.v4.runtime.tree.*;
 
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class TestVisitor extends AbstractParseTreeVisitor<String> implements Python3Visitor<String> {
 
     private Set<String> variables;
     private int tmpVarCounter;
-    private String currentTmpVar;
+    private Stack<String> atomStack;
 
     public TestVisitor() {
         variables = new HashSet<>();
         tmpVarCounter = 0;
-        currentTmpVar = "";
+        atomStack = new Stack<>();
     }
 
     @Override
-    public String visitSingle_input(Python3Parser.Single_inputContext ctx) {
-        return this.visitChildren(ctx);
+    public String visitAssign_stmt(Python3Parser.Assign_stmtContext ctx) {
+        String result = "";
+
+        String left = "%" + ctx.left.getText();
+        if (!variables.contains(left)) {
+            variables.add(left);
+            result += String.format("%s = alloca i32, align 4\n", left);
+        }
+
+        result += visit(ctx.right);
+        String right = atomStack.pop();
+        result += String.format("store i32 %s, i32* %s, align 4\n", right, left);
+
+        // TODO: Do not print here
+        //System.out.println(result);
+        return result;
+    }
+
+    @Override
+    public String visitArith_expr_multi_term(Python3Parser.Arith_expr_multi_termContext ctx) {
+        String operation;
+        switch (ctx.op.getType()) {
+            case Python3Lexer.ADD:  operation = "add"; break;
+            case Python3Lexer.MINUS: operation = "sub"; break;
+            default: throw new IllegalArgumentException("Unsupported operation code for arith_expr_multi_term: " + ctx.op.getType());
+        }
+
+        return createLeftRightOperation(ctx.left, ctx.right, operation);
+    }
+
+    @Override
+    public String visitTerm_multi_factor(Python3Parser.Term_multi_factorContext ctx) {
+        String operation;
+        switch (ctx.op.getType()) {
+            case Python3Lexer.STAR:  operation = "mul"; break;
+            case Python3Lexer.DIV: operation = "div"; break;
+            default: throw new IllegalArgumentException("Unsupported operation code for term_multi_factor: " + ctx.op.getType());
+        }
+
+        return createLeftRightOperation(ctx.left, ctx.right, operation);
+    }
+
+    private String createLeftRightOperation(ParseTree left, ParseTree right, String operation) {
+        String result = "";
+
+        result += visit(left);
+        String leftVar = atomStack.pop();
+
+        result += visit(right);
+        String rightVar = atomStack.pop();
+
+        String opTmpVarName = "%" + operation + tmpVarCounter++;
+        result += String.format("%s = %s nsw i32 %s, %s\n", opTmpVarName, operation, leftVar, rightVar);
+        atomStack.push(opTmpVarName);
+
+        return result;
+    }
+
+    @Override
+    public String visitAtom(Python3Parser.AtomContext ctx) {
+        if (Objects.nonNull(ctx.NAME())) {
+            String varName = "%" + ctx.NAME().getText();
+            String tmpVarName = getNextTmpVarName();
+            atomStack.push(tmpVarName);
+            return  String.format("%s = load i32, i32* %s, align 4\n", tmpVarName, varName);
+        } else {
+            String number = ctx.NUMBER().getText();
+            atomStack.push(number);
+            return "";
+        }
+    }
+
+    @Override
+    public String visitIf_stmt(Python3Parser.If_stmtContext ctx) {
+        String result = "";
+        result += visit(ctx.if_test);
+        String testVar = atomStack.pop();
+
+        String labelThen = "if.then." + tmpVarCounter++;
+        String labelEnd = "if.end." + tmpVarCounter++;
+        result += String.format("br i1 %s, label %%%s, label %%%s\n", testVar, labelThen, labelEnd);
+
+        result += "\n";
+        result += labelThen + ":\n";
+        result += visit(ctx.if_suite);
+        result += String.format("br label %%%s\n", labelEnd);
+
+        result += "\n";
+        result += labelEnd + ":\n";
+
+        // TODO: Do not print here
+        //System.out.println(result);
+        return result;
+    }
+
+    @Override
+    public String visitMulti_comparison(Python3Parser.Multi_comparisonContext ctx) {
+        //TODO: Signed unsigned support
+        String result = "";
+
+        String operation = visit(ctx.op);
+
+        result += visit(ctx.left);
+        String left = atomStack.pop();
+
+        result += visit(ctx.right);
+        String right = atomStack.pop();
+
+        String cmpVar = "%cmp" + tmpVarCounter++;
+        result += String.format("%s = icmp %s i32 %s, %s\n", cmpVar, operation, left, right);
+        atomStack.push(cmpVar);
+
+        return result;
+    }
+
+    @Override
+    public String visitSuite(Python3Parser.SuiteContext ctx) {
+        return getChildrenText(ctx.children);
+    }
+
+    @Override
+    public String visitComp_op(Python3Parser.Comp_opContext ctx) {
+        int operationType = ((TerminalNode) ctx.children.get(0)).getSymbol().getType();
+        switch (operationType) {
+            case Python3Lexer.EQUALS: return "eq";
+            case Python3Lexer.LESS_THAN: return "slt";
+            case Python3Lexer.GREATER_THAN: return "sgt";
+            case Python3Lexer.GT_EQ: return "sge";
+            case Python3Lexer.LT_EQ: return "sle";
+            case Python3Lexer.NOT_EQ_2: return "ne";
+            default: throw new IllegalArgumentException("Invalid operation type for comp_op: " + operationType);
+        }
+    }
+
+    @Override
+    public String visitStmt(Python3Parser.StmtContext ctx) {
+        return getChildrenText(ctx.children);
+    }
+
+    @Override
+    public String visitSimple_stmt(Python3Parser.Simple_stmtContext ctx) {
+        return getChildrenText(ctx.children);
+    }
+
+    @Override
+    public String visitSmall_stmt(Python3Parser.Small_stmtContext ctx) {
+        return getChildrenText(ctx.children);
     }
 
     @Override
     public String visitFile_input(Python3Parser.File_inputContext ctx) {
+        return getChildrenText(ctx.children);
+    }
+
+    @Override
+    public String visitCompound_stmt(Python3Parser.Compound_stmtContext ctx) {
+        return getChildrenText(ctx.children);
+    }
+
+    private String getChildrenText(List<ParseTree> children) {
+        StringBuilder result = new StringBuilder();
+        for (ParseTree stmt: children) {
+            String childText = visit(stmt);
+            if (Objects.nonNull(childText)) {
+                result.append(childText);
+            }
+        }
+        return result.toString();
+    }
+
+    @Override
+    public String visitSingle_comparison(Python3Parser.Single_comparisonContext ctx) {
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public String visitSingle_input(Python3Parser.Single_inputContext ctx) {
         return this.visitChildren(ctx);
     }
 
@@ -87,64 +256,28 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     }
 
     @Override
-    public String visitStmt(Python3Parser.StmtContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitSimple_stmt(Python3Parser.Simple_stmtContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitSmall_stmt(Python3Parser.Small_stmtContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitSimple_assign(Python3Parser.Simple_assignContext ctx) {
-        String right = ctx.right_atom.getText();
-        String var = ctx.left.getText();
-
-        if (!variables.contains(var)) {
-            variables.add(var);
-            System.out.printf("%%%s = alloca i32, align 4\n", var);
-        }
-
-        if (ctx.right_atom.NUMBER() == null) {
-            System.out.printf("%%%d = load i32, i32* %%%s, align 4\n", tmpVarCounter, right);
-            System.out.printf("store i32 %%%d, i32* %%%s, align 4\n", tmpVarCounter, var);
-            tmpVarCounter += 1;
-        } else {
-            System.out.printf("store i32 %s, i32* %%%s, align 4\n", right, var);
-        }
-
-        return null;
-    }
-
-    @Override
-    public String visitComplex_assign(Python3Parser.Complex_assignContext ctx) {
-        String var = ctx.left.getText();
-
-        if (!variables.contains(var)) {
-            variables.add(var);
-            System.out.printf("%%%s = alloca i32, align 4\n", var);
-        }
-
-        System.out.print(visit(ctx.right_expr));
-        if (!currentTmpVar.isEmpty()) {
-            System.out.printf("store i32 %%%s, i32* %%%s, align 4\n", currentTmpVar, var);
-            currentTmpVar = "";
-        }
-        return null;
-    }
-
-    @Override
     public String visitExpr_stmt(Python3Parser.Expr_stmtContext ctx) {
-        if (ctx.getChild(1) instanceof TerminalNode) {
-            System.out.println(visit(ctx.getChild(0)) + " = " + visit(ctx.getChild(2)));
-        }
-        return null;
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public String visitTerm_single_factor(Python3Parser.Term_single_factorContext ctx) {
+        return this.visitChildren(ctx);
+    }
+
+    @Override
+    public String visitFactor(Python3Parser.FactorContext ctx) {
+        return this.visitChildren(ctx);
+    }
+
+    @Override
+    public String visitPower(Python3Parser.PowerContext ctx) {
+        return this.visitChildren(ctx);
+    }
+
+    @Override
+    public String visitAtom_expr(Python3Parser.Atom_exprContext ctx) {
+        return this.visitChildren(ctx);
     }
 
     @Override
@@ -258,17 +391,7 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     }
 
     @Override
-    public String visitCompound_stmt(Python3Parser.Compound_stmtContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
     public String visitAsync_stmt(Python3Parser.Async_stmtContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitIf_stmt(Python3Parser.If_stmtContext ctx) {
         return this.visitChildren(ctx);
     }
 
@@ -299,11 +422,6 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
 
     @Override
     public String visitExcept_clause(Python3Parser.Except_clauseContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitSuite(Python3Parser.SuiteContext ctx) {
         return this.visitChildren(ctx);
     }
 
@@ -343,16 +461,6 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     }
 
     @Override
-    public String visitComparison(Python3Parser.ComparisonContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitComp_op(Python3Parser.Comp_opContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
     public String visitStar_expr(Python3Parser.Star_exprContext ctx) {
         return this.visitChildren(ctx);
     }
@@ -380,88 +488,6 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     @Override
     public String visitArith_expr_single_term(Python3Parser.Arith_expr_single_termContext ctx) {
         return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitArith_expr_multi_term(Python3Parser.Arith_expr_multi_termContext ctx) {
-        String operation;
-        if (ctx.op.getType() == Python3Parser.ADD) {
-            operation = "add";
-        } else {
-            operation = "sub";
-        }
-
-        String result = "";
-        if (ctx.left instanceof Python3Parser.Arith_expr_single_termContext) {
-            String left = visit(ctx.left);
-            String right = visit(ctx.right);
-            if (left.contains("%") && right.contains("%")) {
-                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, left);
-                tmpVarCounter += 1;
-                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, right);
-                result += String.format("%%%s = %s nsw i32 %%%d, %%%d\n", operation, operation, tmpVarCounter-1, tmpVarCounter);
-                tmpVarCounter += 1;
-                currentTmpVar = operation;
-            } else if (left.contains("%")) {
-                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, left);
-                result += String.format("%%%s = %s nsw i32 %%%d, %s\n", operation, operation, tmpVarCounter, right);
-                tmpVarCounter += 1;
-                currentTmpVar = operation;
-            } else if (right.contains("%")) {
-                result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, right);
-                result += String.format("%%%s = %s nsw i32 %%%d, %s\n", operation, operation, tmpVarCounter, left);
-                tmpVarCounter += 1;
-                currentTmpVar = operation;
-            } else {
-                result += String.format("%%%s = %s nsw i32 %s, %s\n", operation, operation, left, right);
-                currentTmpVar = operation;
-            }
-        } else {
-            result += visit(ctx.left);
-            result += String.format("%%%d = load i32, i32* %s, align 4\n", tmpVarCounter, visit(ctx.right));
-            result += String.format("%%%s = %s nsw i32 %%%s, %%%d\n", operation, operation, currentTmpVar, tmpVarCounter);
-            tmpVarCounter += 1;
-            currentTmpVar = operation;
-        }
-        return result;
-    }
-
-    @Override
-    public String visitTerm_multi_factor(Python3Parser.Term_multi_factorContext ctx) {
-        switch (ctx.op.getType()) {
-            case Python3Lexer.STAR:  return "mul i32 " + visit(ctx.left) + ", " + visit(ctx.right);
-            case Python3Lexer.DIV: return "div i32 " + visit(ctx.left) + ", " + visit(ctx.right);
-        }
-        return visitChildren(ctx);
-    }
-
-    @Override
-    public String visitTerm_single_factor(Python3Parser.Term_single_factorContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitFactor(Python3Parser.FactorContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitPower(Python3Parser.PowerContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitAtom_expr(Python3Parser.Atom_exprContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitAtom(Python3Parser.AtomContext ctx) {
-        if (Objects.nonNull(ctx.NAME())) {
-            return  "%" + ctx.NAME().toString();
-        } else {
-            return ctx.NUMBER().toString();
-        }
     }
 
     @Override
@@ -547,5 +573,9 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     @Override
     public String visitYield_arg(Python3Parser.Yield_argContext ctx) {
         return this.visitChildren(ctx);
+    }
+
+    private String getNextTmpVarName() {
+        return "%" + tmpVarCounter++;
     }
 }

@@ -24,6 +24,6 @@ public class Main {
         ParseTree tree = parser.file_input();
 
         TestVisitor llvmTranslatorVisitor = new TestVisitor();
-        llvmTranslatorVisitor.visit(tree);
+        System.out.println(llvmTranslatorVisitor.visit(tree));
     }
 }
