@@ -157,7 +157,7 @@ vfpdef: NAME;
 
 stmt: simple_stmt | compound_stmt;
 simple_stmt: small_stmt (';' small_stmt)* (';')? NEWLINE;
-small_stmt: (assign_stmt | expr_stmt | del_stmt | pass_stmt | flow_stmt |
+small_stmt: ( return_stmt | assign_stmt | expr_stmt | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | nonlocal_stmt | assert_stmt);
 assign_stmt: left=atom '=' right=testlist_star_expr;
 expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -191,7 +191,7 @@ assert_stmt: 'assert' test (',' test)?;
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt;
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt);
-if_stmt: 'if' if_test=test ':' if_suite=suite ('elif' elif_test=test ':' elif_suite=suite)* ('else' ':' else_suite=suite)?;
+if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ('else' ':' suite)?;
 while_stmt: 'while' test ':' suite ('else' ':' suite)?;
 for_stmt: 'for' exprlist 'in' testlist ':' suite ('else' ':' suite)?;
 try_stmt: ('try' ':' suite
@@ -213,8 +213,7 @@ or_test: and_test ('or' and_test)*;
 and_test: not_test ('and' not_test)*;
 not_test: 'not' not_test | comparison;
 
-comparison: expr #single_comparison
-          | left=comparison op=comp_op right=expr #multi_comparison;
+comparison: expr (comp_op expr)*;
 
 // <> isn't actually a valid comparison operator in Python. It's here for the
 // sake of a __future__ import described in PEP 401 (which really works :-)
