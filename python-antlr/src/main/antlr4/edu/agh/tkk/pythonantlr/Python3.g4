@@ -230,7 +230,7 @@ arith_expr: left=arith_expr op=('+'|'-') right=term #arith_expr_multi_term
 term: factor #term_single_factor
     | left=factor op=('*'|'@'|'/'|'%'|'//') right=term #term_multi_factor;
 
-factor: ('+'|'-'|'~') factor | power;
+factor: op=('+'|'-'|'~') factor | power;
 power: atom_expr ('**' factor)?;
 atom_expr: (AWAIT)? atom trailer*;
 atom: ('(' (yield_expr|testlist_comp)? ')' |
