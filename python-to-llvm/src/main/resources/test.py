@@ -3,4 +3,4 @@ def func(a,b):
     return a
 
 def main(c):
-    func(c)
+    func(func(c))

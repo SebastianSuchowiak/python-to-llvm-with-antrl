@@ -361,7 +361,7 @@ public class PythonToLlvmVisitor extends AbstractParseTreeVisitor<String> implem
     @Override
     public String visitAtom_expr(Python3Parser.Atom_exprContext ctx) {
         if (ctx.trailer().size() != 0) {
-            String callVariable = "%call" + tmpVarCounter;
+            String callVariable = "%call" + tmpVarCounter++;
             String result = createArgs(ctx.trailer().get(0));
             String args = atomStack.pop();
             String functionName = ctx.atom().NAME().getText();
