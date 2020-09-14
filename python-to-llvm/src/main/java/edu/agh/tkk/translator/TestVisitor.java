@@ -218,10 +218,16 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     @Override
     public String visitFuncdef(Python3Parser.FuncdefContext ctx) {
         StringBuilder result = new StringBuilder();
-        List<String> parameters = createParametersList(ctx.parameters());
+
+        List<String> parameters;
+        if (Objects.nonNull(ctx.parameters().typedargslist())) {
+            parameters = createParametersList(ctx.parameters());
+        } else {
+            parameters = Collections.emptyList();
+        }
 
         String args = parameters.stream().map(c -> "i32 %" + c + ".arg").collect(Collectors.joining(", "));
-        result.append(String.format("define dso_local i32 @test(%s) #0 {\nentry:\n", args));
+        result.append(String.format("define dso_local i32 @%s(%s) #0 {\nentry:\n", ctx.NAME(), args));
 
         result.append(parameters.stream().map(this::createArgInit).collect(Collectors.joining()));
         result.append(visit(ctx.suite()));
@@ -323,6 +329,62 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
                 result.append(childText);
             }
         }
+        atomStack = new Stack<String>();
+        return result.toString();
+    }
+
+    @Override
+    public String visitFactor(Python3Parser.FactorContext ctx) {
+        StringBuilder result = new StringBuilder();
+        result.append(visitChildren(ctx));
+
+        if (Objects.nonNull(ctx.op) && ctx.op.getType() == Python3Lexer.MINUS) {
+            String atom = atomStack.pop();
+            String factorizedAtom;
+            if (atom.contains("%")) {
+                factorizedAtom = "%sub" + tmpVarCounter++;
+                result.append(String.format("%s = sub nsw i32 0, %s\n", factorizedAtom, atom));
+            } else {
+                if (atom.contains("-")) {
+                    factorizedAtom = atom.substring(1);
+                } else {
+                    factorizedAtom = "-" + atom;
+                }
+            }
+            atomStack.push(factorizedAtom);
+        }
+
+        return result.toString();
+    }
+
+
+    @Override
+    public String visitAtom_expr(Python3Parser.Atom_exprContext ctx) {
+        if (ctx.trailer().size() != 0) {
+            String callVariable = "%call" + tmpVarCounter;
+            String result = createArgs(ctx.trailer().get(0));
+            String args = atomStack.pop();
+            result += String.format("%s = call i32 @test(%s)\n", callVariable, args);
+            atomStack.push(callVariable);
+            return result;
+        } else {
+            return this.visitChildren(ctx);
+        }
+    }
+
+    public String createArgs(Python3Parser.TrailerContext ctx) {
+        if (Objects.isNull(ctx.arglist())) {
+            atomStack.push("");
+            return "";
+        }
+        StringBuilder result = new StringBuilder();
+        List<String> argStrings = new ArrayList<>();
+        for (Python3Parser.ArgumentContext arg: ctx.arglist().argument()) {
+            result.append(visit(arg));
+            argStrings.add(atomStack.pop());
+        }
+        String args = argStrings.stream().map(c -> "i32 " + c).collect(Collectors.joining(", "));
+        atomStack.push(args);
         return result.toString();
     }
 
@@ -392,17 +454,7 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
     }
 
     @Override
-    public String visitFactor(Python3Parser.FactorContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
     public String visitPower(Python3Parser.PowerContext ctx) {
-        return this.visitChildren(ctx);
-    }
-
-    @Override
-    public String visitAtom_expr(Python3Parser.Atom_exprContext ctx) {
         return this.visitChildren(ctx);
     }
 
