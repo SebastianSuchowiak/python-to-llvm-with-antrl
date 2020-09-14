@@ -2,7 +2,6 @@ package edu.agh.tkk.translator;
 
 import edu.agh.tkk.pythonantlr.Python3Lexer;
 import edu.agh.tkk.pythonantlr.Python3Parser;
-import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -23,7 +22,7 @@ public class Main {
 
         ParseTree tree = parser.file_input();
 
-        TestVisitor llvmTranslatorVisitor = new TestVisitor();
+        PythonToLlvmVisitor llvmTranslatorVisitor = new PythonToLlvmVisitor();
         System.out.println(llvmTranslatorVisitor.visit(tree));
     }
 }

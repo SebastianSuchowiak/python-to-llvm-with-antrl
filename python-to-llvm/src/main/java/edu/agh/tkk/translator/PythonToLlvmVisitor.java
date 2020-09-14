@@ -8,13 +8,13 @@ import org.antlr.v4.runtime.tree.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class TestVisitor extends AbstractParseTreeVisitor<String> implements Python3Visitor<String> {
+public class PythonToLlvmVisitor extends AbstractParseTreeVisitor<String> implements Python3Visitor<String> {
 
     private Set<String> variables;
     private int tmpVarCounter;
     private Stack<String> atomStack;
 
-    public TestVisitor() {
+    public PythonToLlvmVisitor() {
         variables = new HashSet<>();
         tmpVarCounter = 0;
         atomStack = new Stack<>();
@@ -364,7 +364,8 @@ public class TestVisitor extends AbstractParseTreeVisitor<String> implements Pyt
             String callVariable = "%call" + tmpVarCounter;
             String result = createArgs(ctx.trailer().get(0));
             String args = atomStack.pop();
-            result += String.format("%s = call i32 @test(%s)\n", callVariable, args);
+            String functionName = ctx.atom().NAME().getText();
+            result += String.format("%s = call i32 @%s(%s)\n", callVariable, functionName, args);
             atomStack.push(callVariable);
             return result;
         } else {

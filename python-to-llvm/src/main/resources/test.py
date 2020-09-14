@@ -1,6 +1,6 @@
-def test(a, b):
-    return a+b
+def func(a,b):
+    b=b+1
+    return a
 
-def main():
-    b = 4
-    a = test(3, b)
+def main(c):
+    func(c)
