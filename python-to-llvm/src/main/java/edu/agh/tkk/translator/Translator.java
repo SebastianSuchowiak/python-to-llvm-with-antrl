@@ -15,7 +15,7 @@ public class Translator {
     private CommonTokenStream commonTokenStream;
     private Python3Parser parser;
     private ParseTree tree;
-    private TestVisitor llvmTranslatorVisitor;
+    private PythonToLlvmVisitor llvmTranslatorVisitor;
 
     private void setup(String pythonCode) {
         input = CharStreams.fromString(pythonCode);
@@ -23,7 +23,7 @@ public class Translator {
         commonTokenStream = new CommonTokenStream(lexer);
         parser = new Python3Parser(commonTokenStream);
         tree = parser.file_input();
-        llvmTranslatorVisitor = new TestVisitor();
+        llvmTranslatorVisitor = new PythonToLlvmVisitor();
     }
 
     public String translateFromString(String pythonCode) {
